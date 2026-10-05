@@ -1,0 +1,57 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>CodeChef Copilot</title>
+    <link rel="stylesheet" href="popup.css" />
+  </head>
+  <body>
+    <div class="popup-shell">
+      <header class="header">
+        <div>
+          <div class="eyebrow">CODECHEF COPILOT</div>
+          <h1>MODULE</h1>
+        </div>
+        <button id="start-button" class="primary-btn">⚡ Solve Module</button>
+      </header>
+
+      <main class="summary">
+        <div class="row">
+          <span>Progress</span>
+          <strong id="progress-value">0 / 0</strong>
+        </div>
+        <div class="row">
+          <span>Current</span>
+          <strong id="current-question">Question 1</strong>
+        </div>
+        <div class="row">
+          <span>TYPE</span>
+          <strong id="question-type">UNKNOWN</strong>
+        </div>
+        <div class="row">
+          <span>STATUS</span>
+          <strong id="status-pill" class="status-idle">Idle</strong>
+        </div>
+      </main>
+
+      <section class="panel">
+        <div class="panel-header">
+          <span>Activity</span>
+          <button id="stop-button" class="secondary-btn">[STOP COPILOT]</button>
+        </div>
+        <ul id="log-list" class="log-list">
+          <li>Waiting for a CodeChef module.</li>
+        </ul>
+      </section>
+
+      <footer>
+        <div>────────────────────────</div>
+        <div>CodeChef Copilot</div>
+        <div>Made By Siddharth</div>
+      </footer>
+    </div>
+
+    <script src="popup.js"></script>
+  </body>
+</html>

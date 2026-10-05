@@ -1,0 +1,31 @@
+{
+  "manifest_version": 3,
+  "name": "CodeChef Copilot",
+  "version": "0.2.0",
+  "description": "Browser-based autonomous CodeChef study copilot scaffold.",
+  "permissions": [
+    "storage"
+  ],
+  "host_permissions": [
+    "https://*.codechef.com/*",
+    "https://codechef.com/*",
+    "https://codechef-copilot-api.onrender.com/*"
+  ],
+  "action": {
+    "default_title": "CodeChef Copilot",
+    "default_popup": "popup.html"
+  },
+  "background": {
+    "service_worker": "background.js"
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "https://*.codechef.com/*",
+        "https://codechef.com/*"
+      ],
+      "js": ["content.js"],
+      "run_at": "document_idle"
+    }
+  ]
+}

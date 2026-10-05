@@ -1,0 +1,25 @@
+services:
+  - type: web
+    name: codechef-copilot-api
+    runtime: node
+    plan: free
+    region: oregon
+    buildCommand: npm ci
+    startCommand: npm start
+    healthCheckPath: /api/health
+    autoDeploy: true
+    envVars:
+      - key: NVIDIA_API_KEY
+        sync: false
+      - key: NVIDIA_BASE_URL
+        value: https://integrate.api.nvidia.com/v1
+      - key: NVIDIA_MODEL
+        value: meta/llama-3.1-70b-instruct
+      - key: API_CALLS_PER_MINUTE
+        value: "10"
+      - key: TRUST_PROXY
+        value: "1"
+      - key: HOST
+        value: "0.0.0.0"
+      - key: PRIVACY_CONTACT_EMAIL
+        sync: false

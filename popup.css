@@ -1,0 +1,136 @@
+:root {
+  --bg: #08111f;
+  --panel: #0f1d2b;
+  --line: #1d364b;
+  --text: #ebf5ff;
+  --muted: #9db6d2;
+  --primary: #58d9a9;
+  --primary-soft: rgba(88, 217, 169, 0.14);
+  --warning: #f7c75d;
+  --danger: #ff6b6b;
+  --success: #71f2a5;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  min-width: 360px;
+  background: var(--bg);
+  color: var(--text);
+  font-family: 'Segoe UI', sans-serif;
+}
+
+button {
+  font: inherit;
+}
+
+.popup-shell {
+  padding: 18px 16px 12px;
+}
+
+.header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+}
+
+.eyebrow {
+  font-size: 0.72rem;
+  color: var(--muted);
+  letter-spacing: 0.12em;
+}
+
+h1 {
+  margin: 8px 0 0;
+  font-size: 1.9rem;
+}
+
+.primary-btn,
+.secondary-btn {
+  border: none;
+  border-radius: 10px;
+  padding: 9px 12px;
+  cursor: pointer;
+  font-weight: 700;
+}
+
+.primary-btn {
+  background: linear-gradient(135deg, #7de3c0, #61d2ff);
+  color: #041a20;
+}
+
+.secondary-btn {
+  background: rgba(255,255,255,0.04);
+  color: var(--text);
+  border: 1px solid var(--line);
+}
+
+.summary {
+  margin-top: 18px;
+  display: grid;
+  gap: 10px;
+  padding: 14px 12px;
+  border-radius: 12px;
+  background: rgba(255,255,255,0.02);
+  border: 1px solid var(--line);
+}
+
+.row {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  color: var(--muted);
+}
+
+.row strong {
+  color: var(--text);
+}
+
+.status-idle { color: var(--warning); }
+.status-solving { color: var(--primary); }
+.status-success { color: var(--success); }
+.status-failed { color: var(--danger); }
+
+.panel {
+  margin-top: 18px;
+  padding: 12px;
+  border-radius: 12px;
+  border: 1px solid var(--line);
+  background: rgba(255,255,255,0.02);
+}
+
+.panel-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 8px;
+  color: var(--muted);
+}
+
+.log-list {
+  margin: 0;
+  padding-left: 18px;
+  color: var(--text);
+  display: grid;
+  gap: 6px;
+}
+
+footer {
+  margin-top: 18px;
+  text-align: center;
+  color: var(--muted);
+}
+
+footer div:nth-child(2) {
+  margin-top: 10px;
+  color: var(--text);
+}
+
+footer div:last-child {
+  margin-top: 4px;
+  color: #dfeeff;
+}

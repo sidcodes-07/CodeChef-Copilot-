@@ -1,0 +1,76 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>CodeChef Copilot</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <div class="app-shell">
+      <header class="topbar">
+        <div>
+          <p class="eyebrow">CODECHEF COPILOT</p>
+          <h1>MODULE 3</h1>
+        </div>
+        <button id="solve-module" class="primary-button">⚡ Solve Module</button>
+      </header>
+
+      <main class="content-grid">
+        <section class="panel module-panel">
+          <div class="panel-header">
+            <span>Progress</span>
+            <strong id="progress-label">0 / 0</strong>
+          </div>
+          <div class="progress-track">
+            <div id="progress-bar" class="progress-fill"></div>
+          </div>
+
+          <div class="module-summary">
+            <div>
+              <label>Current</label>
+              <div id="current-question-label" class="metric-value">Question 1</div>
+            </div>
+            <div>
+              <label>TYPE</label>
+              <div id="question-type" class="metric-value">MCQ</div>
+            </div>
+            <div>
+              <label>STATUS</label>
+              <div id="status-pill" class="metric-value status-idle">⏳ Idle</div>
+            </div>
+          </div>
+        </section>
+
+        <section class="panel question-panel">
+          <div class="panel-header">
+            <span>Question</span>
+            <button id="stop-copilot" class="secondary-button">[STOP COPILOT]</button>
+          </div>
+
+          <div id="question-card" class="question-card">
+            <div class="question-meta">
+              <span id="question-number" class="chip">Question 1</span>
+              <span id="question-type-badge" class="chip chip-alt">MCQ</span>
+            </div>
+
+            <h2 id="question-title">A system is monitoring a CodeChef module.</h2>
+            <div id="question-body" class="question-body">
+              <p>Ready to detect and solve the current question.</p>
+            </div>
+
+            <div id="option-list" class="option-list"></div>
+          </div>
+        </section>
+      </main>
+
+      <footer class="footer">
+        <span>────────────────────────</span>
+        <div>CodeChef Copilot</div>
+        <div>Made By Siddharth</div>
+      </footer>
+    </div>
+
+    <script src="app.js"></script>
+  </body>
+</html>
