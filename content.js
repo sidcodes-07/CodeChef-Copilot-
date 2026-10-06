@@ -13,10 +13,12 @@
   };
 
   const MAX_ATTEMPTS = 5;
-  const DETECTION_TIMEOUT_MS = 8000;
+  const QUESTION_CHANGE_TIMEOUT_MS = 8000;
   const RESULT_TIMEOUT_MS = 45000;
   const SELECTORS = {
     question: [
+      '[class*="_mcqContainer_"]',
+      '[class*="_mcq_"]',
       '[data-testid*="question"]',
       '[data-question-id]',
       '.mcq-question',
@@ -28,6 +30,8 @@
       '.problem-content'
     ],
     options: [
+      '[class*="_optionBox_"]',
+      '[class*="_optionsContainer_"] label',
       'label',
       'input[type="radio"]',
       '[role="radio"]',
@@ -42,9 +46,14 @@
       'textarea[name*="code" i]',
       'textarea#code',
       '.CodeMirror',
+      '.CodeMirror-scroll',
+      '.CodeMirror-lines',
       '.ace_editor',
       '.ace_text-input',
+      '.ace_scroller',
+      '#submit-ide-v2',
       '.monaco-editor',
+      '.view-lines',
       '.cm-editor',
       '.cm-content[contenteditable="true"]',
       '[data-testid*="editor"]',
@@ -177,73 +186,54 @@
   }
 
   function findVisibleEditors() {
-    const candidates = Array.from(document.querySelectorAll(SELECTORS.editors.join(','))).filter(isVisible);
-    return candidates.filter((editor) => {
-      if (editor.matches('textarea,.ace_text-input') && editor.closest('.CodeMirror,.ace_editor,.monaco-editor,.cm-editor,[data-testid*="editor"],.code-editor,.editor')) {
-        return false;
-      }
-      if (editor.matches('.editor,[data-testid*="editor"]') &&
-          editor.querySelector('.CodeMirror,.ace_editor,.monaco-editor,.cm-editor')) {
-        return false;
-      }
-      const context = visibleText(editor.parentElement?.parentElement);
-      return !/custom input/i.test(context.slice(0, 200));
-    }).sort((left, right) => {
+    const candidates = Array.from(document.querySelectorAll(SELECTORS.editors.join(',')))
+      .filter(isVisible)
+      .filter((editor) => {
+        if (editor.closest('#codechef-copilot-panel')) return false;
+        if (editor.matches('.ace_editor') && editor.id === 'submit-ide-v2') return true;
+        if (editor.matches('textarea,.ace_text-input') &&
+            editor.closest('.CodeMirror,.ace_editor,.monaco-editor,.cm-editor,[data-testid*="editor"],.code-editor,.editor')) return false;
+        if (editor.matches('.editor,[data-testid*="editor"]') &&
+            editor.querySelector('.CodeMirror,.ace_editor,.monaco-editor,.cm-editor')) return false;
+        const context = `${editor.className || ''} ${editor.parentElement?.className || ''} ${editor.parentElement?.getAttribute('aria-label') || ''}`;
+        return !/custom.?input/i.test(context);
+      });
+
+    const unique = [...new Set(candidates.map((editor) =>
+      editor.matches('.CodeMirror-scroll,.CodeMirror-lines') ? editor.closest('.CodeMirror') || editor :
+      editor.matches('.ace_scroller,.view-lines') ? editor.closest('.ace_editor,.monaco-editor') || editor :
+      editor
+    ))];
+    return unique.sort((left, right) => {
       const score = (element) => {
         const classes = typeof element.className === 'string' ? element.className : '';
-        return /CodeMirror|ace_editor|monaco-editor|cm-editor|code-editor|editor/i.test(classes) ? 1 : 0;
+        const rect = element.getBoundingClientRect();
+        const customInput = /custom.?input/i.test(`${classes} ${element.getAttribute('aria-label') || ''}`);
+        return (customInput ? -100 : 0) +
+          (/CodeMirror|ace_editor|monaco-editor|cm-editor|code-editor|editor/i.test(classes) ? 20 : 0) +
+          (rect.width > 250 && rect.height > 120 ? 10 : 0) +
+          (rect.left > window.innerWidth * 0.35 ? 5 : 0);
       };
       return score(right) - score(left);
     });
   }
 
   function findQuestionRoot() {
+    const courseMcq = Array.from(document.querySelectorAll('[class*="_mcqContainer_"]')).find(isVisible);
+    if (courseMcq) return courseMcq;
+
+    const explicitQuestion = Array.from(document.querySelectorAll(SELECTORS.question.join(','))).find(isVisible);
+    if (explicitQuestion) return explicitQuestion;
+
     const editor = findVisibleEditors()[0];
-    if (editor) {
-      let ancestor = editor.parentElement;
-      for (let depth = 0; ancestor && depth < 7; depth += 1, ancestor = ancestor.parentElement) {
-        const text = visibleText(ancestor);
-        if (text.length > 100 && text.length < 18000) return ancestor;
+    if (editor) return editor;
+
+    const radio = findFirstVisible(['input[type="radio"]', '[role="radio"]']);
+    if (radio) {
+      let ancestor = radio.parentElement;
+      for (let depth = 0; ancestor && depth < 5; depth += 1, ancestor = ancestor.parentElement) {
+        if (ancestor.querySelectorAll('input[type="radio"],[role="radio"]').length >= 2) return ancestor;
       }
-    }
-
-    for (const selector of SELECTORS.question) {
-      const candidate = Array.from(document.querySelectorAll(selector))
-        .filter(isVisible)
-        .slice(0, 20)
-        .sort((a, b) => visibleText(a).length - visibleText(b).length)
-        .find((element) => visibleText(element).length >= 10);
-      if (candidate) return candidate;
-    }
-
-    const statement = findFirstVisible([
-      '.problem-statement',
-      '.problem_statement',
-      '.statement',
-      '[class*="statement"]',
-      '.problems-problem-content',
-      '[data-testid*="problem-statement"]',
-      '[class*="ProblemDescription"]'
-    ]);
-    if (statement) return statement;
-
-    const title = Array.from(document.querySelectorAll('h1,h2,h3'))
-      .filter(isVisible)
-      .slice(0, 20)
-      .find((heading) => {
-        const text = visibleText(heading);
-        return text.length > 5 && text.length < 180;
-      });
-    if (title) {
-      let ancestor = title.parentElement;
-      for (let depth = 0; ancestor && depth < 6; depth += 1, ancestor = ancestor.parentElement) {
-        const text = visibleText(ancestor);
-        if (text.length > 100 && text.length < 18000 &&
-            /input format|output format|constraints|sample/i.test(text)) {
-          return ancestor;
-        }
-      }
-      return title.parentElement || title;
     }
     return null;
   }
@@ -260,7 +250,8 @@
       const label = input?.id ? root.querySelector(`label[for="${CSS.escape(input.id)}"]`) : null;
       const text = visibleText(label || node.closest('label') || (input ? input.parentElement : node));
       if (!text || text.length < 2) continue;
-      const id = normalize(input?.value || node.getAttribute('data-option') || node.getAttribute('data-choice') || node.getAttribute('aria-label') || '');
+      const id = normalize(input?.value || node.getAttribute('data-option') || node.getAttribute('data-choice') || '') ||
+        String.fromCharCode(65 + options.length);
       const key = `${id}\u0000${text}`;
       if (!seen.has(key)) {
         seen.add(key);
@@ -275,23 +266,34 @@
     if (!root) return null;
     const options = collectOptions(root);
     if (options.length >= 2 && !editors.length) {
-      const statement = findStatementRoot(document);
-      const title = visibleText(findFirstVisible(['h1', 'h2', 'h3', '[data-testid*="question-title"]'], statement || root)) || visibleText(statement || root).slice(0, 700);
-      return { type: 'MCQ', root, title, options };
+      const statement = findStatementRoot(root) || root.querySelector('[class*="_mcqStatement_"]') || root;
+      const title = visibleText(findFirstVisible(['h1', 'h2', 'h3', '[data-testid*="question-title"]'], statement)) || visibleText(statement).slice(0, 700);
+      return { type: 'MCQ', root, statement, title, options };
     }
-    if (editors.length === 1) {
-      const statement = findStatementRoot(document);
+    if (editors.length >= 1) {
+      const statement = findStatementRoot(document) ||
+        Array.from(document.querySelectorAll('[class*="problem-statement"],[class*="problemStatement"],[class*="problemBody"],[class*="problemBodyContent"]')).find(isVisible);
       const title = visibleText(findFirstVisible(['h1', 'h2', 'h3', '.problem-statement', '[data-testid*="problem-title"]'], statement || root)) || visibleText(statement || root).slice(0, 700);
-      return { type: 'PROGRAMMING', root, statement: statement || root, title, options: [], editor: editors[0] };
+      return { type: 'PROGRAMMING', root, statement: statement || root, title, options: [], editor: editors[0], editorCount: editors.length };
     }
     return null;
   }
 
   function findStatementRoot(root) {
     const specific = findFirstVisible([
+      '[class*="_mcqStatement_"]',
+      '[class*="problem-statement"]',
+      '[class*="problemStatement"]',
+      '[class*="problemBodyContent"]',
+      '[class*="problemBody"]',
+      '[class*="problemStatementWrapper"]',
       '.problem-statement',
       '.problem_statement',
       '.problems-problem-content',
+      '.problem-description',
+      '.problem_description',
+      '.problem-desc',
+      '.problem-content',
       '[data-testid*="problem-statement"]',
       '[class*="ProblemDescription"]'
     ], root);
@@ -398,7 +400,8 @@
     const cmRoot = editor.matches('.CodeMirror') ? editor : editor.closest('.CodeMirror') || editor.querySelector('.CodeMirror') || editorRoot;
     const cm = cmRoot?.CodeMirror || editorRoot?.CodeMirror || editor.CodeMirror;
     if (cm && typeof cm.getValue === 'function') return cm.getValue();
-    const ace = editor.env?.editor || editorRoot?.env?.editor;
+    const ace = editor.env?.editor || editorRoot?.env?.editor ||
+      globalThis.ace?.edit?.(editor.id || editor);
     if (ace && typeof ace.getValue === 'function') return ace.getValue();
     const textarea = editor.matches('textarea') ? editor : editor.querySelector('textarea');
     if (textarea?.value) return textarea.value;
@@ -407,6 +410,10 @@
   }
 
   function ensureCLanguage() {
+    const codechefLanguageSelect = document.querySelector('#language-select[role="combobox"]');
+    if (isVisible(codechefLanguageSelect)) {
+      return normalize(codechefLanguageSelect.textContent) === 'C';
+    }
     const languageSelect = Array.from(document.querySelectorAll('select')).find((select) =>
       isVisible(select) && Array.from(select.options).some((option) =>
         /^c(?: language)?$/i.test(normalize(option.textContent || option.value))
@@ -435,7 +442,8 @@
       return true;
     }
 
-    const ace = editor.env?.editor || editorRoot?.env?.editor;
+    const ace = editor.env?.editor || editorRoot?.env?.editor ||
+      globalThis.ace?.edit?.(editor.id || editor);
     if (ace && typeof ace.setValue === 'function') {
       ace.setValue(code, -1);
       ace.clearSelection?.();
@@ -476,6 +484,11 @@
 
   function findSubmitButton() {
     if (detectFinalAssessment()) return null;
+    const codechefPractice = isCodeChefCoursePage() || isPracticeProblemPage();
+    if (codechefPractice) {
+      const submit = document.querySelector('#submit_btn');
+      if (isVisible(submit) && !submit.disabled) return submit;
+    }
     const isModulePractice = /\bprev(?:ious)?\s+module\b/i.test(visibleText(document.body)) &&
       /\bnext\b/i.test(visibleText(document.body));
     if (!isModulePractice && !isPracticeProblemPage()) return null;
@@ -486,12 +499,32 @@
     return /^\/problems\/[^/]+\/?$/i.test(location.pathname) && !detectFinalAssessment();
   }
 
+  function isCodeChefCoursePage() {
+    return /^\/learn\/course\/[^/]+\/[^/]+\/problems\/[^/]+\/?$/i.test(location.pathname) &&
+      /\bnext\b/i.test(visibleText(document.body)) &&
+      /\bprev(?:ious)?\s+module\b/i.test(visibleText(document.body));
+  }
+
   function readRunFeedback(root) {
     const candidates = Array.from(document.querySelectorAll(
       '[role="alert"],[aria-live],.result,.run-result,.submission-result,.compile-error,.runtime-error,[class*="result"],[class*="error"],[class*="output"],[data-testid*="output"]'
-    )).filter(isVisible);
-    const matched = candidates.map(visibleText).filter((text) => /accepted|wrong answer|compile|runtime|error|success|passed|failed|test case/i.test(text));
-    return matched.join('\n').slice(-3000) || visibleText(root).slice(-1500);
+    )).filter((element) =>
+      isVisible(element) &&
+      !element.closest('#codechef-copilot-panel') &&
+      !element.closest('[class*="problem-statement"],[class*="problemStatement"],[class*="problemBody"]') &&
+      !element.closest('[class*="input_output__table"]') &&
+      !/test against custom input/i.test(visibleText(element).slice(0, 100))
+    );
+    const matched = candidates.map(visibleText)
+      .filter((text) => /accepted|wrong answer|compile|runtime|error|success|passed|failed|test case/i.test(text));
+    if (matched.length) return matched.join('\n').slice(-3000);
+
+    const output = candidates.find((element) => {
+      const classes = typeof element.className === 'string' ? element.className : '';
+      const text = visibleText(element);
+      return /output/i.test(classes) && text.length > 0 && text.length <= 2000;
+    });
+    return output ? `OUTPUT:${visibleText(output).slice(-2000)}` : '';
   }
 
   function waitForResult(beforeText, timeoutMs = RESULT_TIMEOUT_MS) {
@@ -529,11 +562,50 @@
     if (!selectMcqOption(selected)) {
       throw new Error('Could not verify that the selected MCQ option is marked in the page.');
     }
+
+    const submit = document.querySelector('#submit_btn') ||
+      question.root.closest('[class*="_mcq_"]')?.querySelector('[class*="_submit__btn_"]') ||
+      findButtonByText([/^submit$/], question.root.closest('[class*="_mcq_"]') || document);
+    if (submit && isVisible(submit) && !submit.disabled) {
+      const previousFeedback = readMcqFeedback(question);
+      submit.click();
+      setState(MODULE_STATE.VERIFYING, `Selected “${selected.text}”. Submitted the MCQ answer and waiting for CodeChef feedback.`);
+      await waitForMcqFeedback(question, previousFeedback);
+    } else if (/\/learn\/course\//i.test(location.pathname)) {
+      throw new Error('Selected the answer, but could not find the course MCQ Submit button to verify it.');
+    }
     return selected;
+  }
+
+  function readMcqFeedback(question) {
+    const candidates = Array.from(document.querySelectorAll(
+      '[role="alert"],[aria-live],[class*="answerFeedback"],[class*="answer-feedback"],[class*="submission-result"],[class*="toast"],[class*="result"]'
+    )).filter(isVisible);
+    return candidates.map(visibleText)
+      .filter((text) => /correct|incorrect|wrong answer|try again|accepted|great job|well done/i.test(text))
+      .join('\n');
+  }
+
+  async function waitForMcqFeedback(question, previousFeedback) {
+    const started = Date.now();
+    while (state.active && Date.now() - started < 8000) {
+      await sleep(200);
+      const feedback = readMcqFeedback(question);
+      if (feedback && feedback !== previousFeedback) {
+        if (/incorrect|wrong answer|try again/i.test(feedback)) {
+          throw new Error(`CodeChef marked the MCQ answer incorrect: ${feedback.slice(0, 300)}`);
+        }
+        if (/correct|accepted|great job|well done/i.test(feedback)) return;
+      }
+    }
+    if (state.active) {
+      throw new Error('The answer was selected and submitted, but CodeChef did not show verifiable MCQ feedback within 8 seconds.');
+    }
   }
 
   async function solveProgramming(question) {
     let feedback = '';
+    let shouldSubmit = false;
     for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt += 1) {
       if (!state.active) return false;
       state.attempts += 1;
@@ -553,49 +625,119 @@
       }
 
       const runButton = findButtonByText([/^run(?: code)?$/, /^test(?: code)?$/, /^run sample tests?$/]);
-      const submitButton = findSubmitButton();
-      const actionButton = runButton || submitButton;
-      if (!actionButton) {
+      if (!runButton) {
         state.active = false;
-        setState(MODULE_STATE.WAITING_FOR_USER, 'C code inserted. A supported Run/Test or practice Submit control was not detected; please verify it manually.');
+        setState(MODULE_STATE.WAITING_FOR_USER, 'C code inserted. Could not find Run, so code was not submitted. Please review it and use Run manually.');
         return false;
       }
       const before = readRunFeedback(question.root);
-      actionButton.click();
-      setState(MODULE_STATE.VERIFYING, `${runButton ? 'Running C solution' : 'Submitting practice solution'}, attempt ${attempt}/${MAX_ATTEMPTS}.`);
+      runButton.click();
+      setState(MODULE_STATE.VERIFYING, `Running C solution, attempt ${attempt}/${MAX_ATTEMPTS}.`);
       feedback = await waitForResult(before);
       if (!feedback) {
-        throw new Error(`No observable result appeared within ${RESULT_TIMEOUT_MS / 1000} seconds.`);
+        const sample = extractSampleData(question.statement);
+        const customInput = document.querySelector('textarea[class*="textarea"]')?.value || '';
+        if (sample && normalize(customInput) === normalize(sample.input)) {
+          setState(MODULE_STATE.SOLVING, 'The sample input is loaded, but CodeChef did not expose the Run output. Retrying is not useful; stopping for manual result review.');
+          state.active = false;
+          return false;
+        }
+        throw new Error(`No observable Run result appeared within ${RESULT_TIMEOUT_MS / 1000} seconds.`);
       }
       if (/wrong answer|compile error|runtime error|failed/i.test(feedback)) {
         setState(MODULE_STATE.SOLVING, `Run reported an error; preparing a corrected solution. ${feedback.slice(-350)}`);
         continue;
       }
+      const sample = extractSampleData(question.statement);
+      const customInput = document.querySelector('textarea[class*="textarea"]')?.value || '';
+      const actual = extractOutputText(feedback);
+      if (sample && normalize(customInput) === normalize(sample.input) && normalize(actual) === normalize(sample.output)) {
+          shouldSubmit = true;
+          break;
+      }
       if (/accepted|all test cases passed|submission successful/i.test(feedback)) return true;
 
-      if (runButton && submitButton) {
-        const beforeSubmit = readRunFeedback(question.root);
-        submitButton.click();
-        setState(MODULE_STATE.VERIFYING, `Submitting the tested practice solution, attempt ${attempt}/${MAX_ATTEMPTS}.`);
-        feedback = await waitForResult(beforeSubmit);
-        if (!feedback) {
-          throw new Error(`No submission result appeared within ${RESULT_TIMEOUT_MS / 1000} seconds.`);
-        }
-        if (/\baccepted\b|all test cases passed|submission successful/i.test(feedback) &&
-            !/wrong answer|compile error|runtime error|failed/i.test(feedback)) return true;
-        if (/wrong answer|compile error|runtime error|failed/i.test(feedback)) {
-          setState(MODULE_STATE.SOLVING, `Submission reported an error; preparing a corrected solution. ${feedback.slice(-350)}`);
-          continue;
-        }
+      if (sample && normalize(customInput) === normalize(sample.input)) {
+        feedback = `Run output did not match the sample output. Expected: ${sample.output}. Observed: ${actual || feedback.slice(-500)}`;
+        setState(MODULE_STATE.SOLVING, `Run output differs from the sample; debugging. ${feedback.slice(-350)}`);
+        continue;
       }
-      throw new Error(`Could not confidently verify the Run/Submit result: ${feedback.slice(-500)}`);
+      throw new Error(`Could not confidently verify the Run result: ${feedback.slice(-500)}`);
     }
-    throw new Error(`Programming question did not pass after ${MAX_ATTEMPTS} attempts. ${feedback.slice(-500)}`);
+
+    if (!shouldSubmit) {
+      throw new Error(`Programming question did not pass sample validation after ${MAX_ATTEMPTS} attempts. ${feedback.slice(-500)}`);
+    }
+
+    const submit = findSubmitButton();
+    if (!submit) {
+      state.active = false;
+      setState(MODULE_STATE.WAITING_FOR_USER, 'Code ran and matched the sample. Could not find the course Submit control; review and submit manually.');
+      return false;
+    }
+    const beforeSubmit = readRunFeedback(question.root);
+    submit.click();
+    setState(MODULE_STATE.VERIFYING, 'Sample output matched. Submitted this practice solution; waiting for the judge result.');
+    feedback = await waitForResult(beforeSubmit);
+    if (/\baccepted\b|all test cases passed|submission successful/i.test(feedback) &&
+        !/wrong answer|compile error|runtime error|failed/i.test(feedback)) return true;
+    if (/wrong answer|compile error|runtime error|failed/i.test(feedback)) {
+      throw new Error(`CodeChef judged the submitted solution as unsuccessful: ${feedback.slice(-500)}`);
+    }
+    state.active = false;
+    setState(MODULE_STATE.WAITING_FOR_USER, 'Submitted after sample validation. Judge feedback was not recognizable; verify the result manually.');
+    return false;
+  }
+
+  function extractSampleData(statement) {
+    if (!statement) return null;
+    const table = statement.querySelector('[class*="input_output__table"]');
+    if (table) {
+      const columns = Array.from(table.querySelectorAll('[class*="values_bh3c4_"]'))
+        .filter((column) => column.querySelector('pre'));
+      if (columns.length >= 2) {
+        return {
+          input: columns[0].querySelector('pre').textContent,
+          output: columns[1].querySelector('pre').textContent
+        };
+      }
+      const values = Array.from(table.querySelectorAll('pre'));
+      if (values.length > 1) return { input: values[0].textContent, output: values[1].textContent };
+    }
+
+    const sampleHeading = Array.from(statement.querySelectorAll('h1,h2,h3,h4,h5,strong,b'))
+      .find((element) => /^sample(?:\s+\d+)?\s*:?$/i.test(normalize(element.textContent)));
+    if (!sampleHeading) return null;
+    let section = sampleHeading.parentElement;
+    while (section && section !== statement) {
+      const text = normalize(section.textContent);
+      if (/input/i.test(text) && /output/i.test(text) && section.querySelector('pre')) {
+        const pres = Array.from(section.querySelectorAll('pre'));
+        if (pres.length >= 2) return { input: pres[0].textContent, output: pres[1].textContent };
+      }
+      section = section.parentElement;
+    }
+    return null;
+  }
+
+  function extractOutputText(feedback) {
+    if (feedback.startsWith('OUTPUT:')) {
+      const outputText = feedback.slice('OUTPUT:'.length);
+      const lines = outputText.split(/\r?\n/).map(normalize).filter(Boolean);
+      const labelIndex = lines.findIndex((line) => /^output(?:\s*\(.*\))?$/i.test(line));
+      return (labelIndex >= 0 ? lines.slice(labelIndex + 1) : lines).join('\n');
+    }
+    const lines = feedback.split(/\r?\n/).map(normalize).filter(Boolean);
+    const outputIndex = lines.findIndex((line) => /^output(?:\s*\(.*\))?$/i.test(line));
+    if (outputIndex >= 0) {
+      return lines.slice(outputIndex + 1).filter((line) => !/^(input|custom input|run|submit)$/i.test(line)).join('\n');
+    }
+    return lines.at(-1) || '';
   }
 
   async function waitForChangedQuestion(previousFingerprint) {
     const started = Date.now();
-    while (state.active && Date.now() - started < DETECTION_TIMEOUT_MS) {
+    while (state.active && Date.now() - started < QUESTION_CHANGE_TIMEOUT_MS) {
       await sleep(250);
       const root = getQuestionRoot();
       if (!root) continue;
@@ -750,17 +892,8 @@
   }
 
   function waitForQuestion() {
-    const started = Date.now();
-    return new Promise((resolve) => {
-      const check = () => {
-        const root = getQuestionRoot();
-        const question = root && detectQuestion(root);
-        if (question) return resolve(question);
-        if (Date.now() - started >= DETECTION_TIMEOUT_MS) return resolve(null);
-        setTimeout(check, 200);
-      };
-      check();
-    });
+    const root = getQuestionRoot();
+    return Promise.resolve(root && detectQuestion(root));
   }
 
   function describeDetectionFailure() {
@@ -770,7 +903,7 @@
       .slice(0, 5)
       .map(visibleText)
       .filter(Boolean);
-    return `Could not detect a supported question after ${DETECTION_TIMEOUT_MS / 1000}s. Found ${editorCount} visible code editor(s); page headings: ${headings.join(' | ') || 'none'}.`;
+    return `Could not detect a supported question during the immediate page scan. Found ${editorCount} visible code editor(s); page headings: ${headings.join(' | ') || 'none'}.`;
   }
 
   async function retryFailedQuestion() {
