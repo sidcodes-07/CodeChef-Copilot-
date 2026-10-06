@@ -9,6 +9,7 @@ services:
     healthCheckPath: /api/health
     autoDeploy: true
     envVars:
+      # Render prompts for this secret; do not commit its value here.
       - key: NVIDIA_API_KEY
         sync: false
       - key: NVIDIA_BASE_URL
@@ -21,5 +22,3 @@ services:
         value: "1"
       - key: HOST
         value: "0.0.0.0"
-      - key: PRIVACY_CONTACT_EMAIL
-        sync: false

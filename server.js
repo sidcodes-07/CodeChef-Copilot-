@@ -15,7 +15,7 @@ const NVIDIA_BASE_URL = (process.env.NVIDIA_BASE_URL || 'https://integrate.api.n
 const NVIDIA_MODEL = process.env.NVIDIA_MODEL || 'moonshotai/kimi-k3';
 const REQUEST_TIMEOUT_MS = 45000;
 const API_CALLS_PER_MINUTE = Number(process.env.API_CALLS_PER_MINUTE || 10);
-const PRIVACY_CONTACT_EMAIL = process.env.PRIVACY_CONTACT_EMAIL || 'replace-with-your-support-email';
+const PRIVACY_CONTACT_EMAIL = process.env.PRIVACY_CONTACT_EMAIL || '';
 
 if (process.env.TRUST_PROXY === '1') {
   app.set('trust proxy', 1);
@@ -42,8 +42,11 @@ app.get('/privacy', (_req, res) => {
     '"': '&quot;',
     "'": '&#39;'
   })[character]);
+  const contactParagraph = PRIVACY_CONTACT_EMAIL
+    ? `<p>For privacy questions or deletion requests, contact the publisher at <a href="mailto:${escapeHtml(PRIVACY_CONTACT_EMAIL)}">${escapeHtml(PRIVACY_CONTACT_EMAIL)}</a>.</p>`
+    : '<p>For privacy questions, please contact the publisher through the extension store listing.</p>';
   const page = fs.readFileSync(path.join(__dirname, 'privacy.html'), 'utf8')
-    .replaceAll('replace-with-your-support-email', escapeHtml(PRIVACY_CONTACT_EMAIL));
+    .replace('<!-- PRIVACY_CONTACT -->', contactParagraph);
   res.type('html').send(page);
 });
 

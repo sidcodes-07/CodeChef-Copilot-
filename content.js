@@ -13,7 +13,8 @@
   };
 
   const MAX_ATTEMPTS = 5;
-  const WAIT_TIMEOUT_MS = 12000;
+  const DETECTION_TIMEOUT_MS = 8000;
+  const RESULT_TIMEOUT_MS = 45000;
   const SELECTORS = {
     question: [
       '[data-testid*="question"]',
@@ -44,10 +45,16 @@
       '.ace_editor',
       '.ace_text-input',
       '.monaco-editor',
+      '.cm-editor',
       '.cm-content[contenteditable="true"]',
       '[data-testid*="editor"]',
       '.code-editor',
-      '.editor'
+      '.editor',
+      'textarea[id*="editor" i]',
+      'textarea[name*="editor" i]',
+      'textarea[aria-label*="code" i]',
+      'textarea[placeholder*="code" i]',
+      '[role="textbox"][aria-label*="code" i]'
     ]
   };
 
@@ -71,7 +78,7 @@
   const sleep = (ms) => new Promise((resolve) => window.setTimeout(resolve, ms));
   const isVisible = (element) => Boolean(element && element.isConnected && element.getClientRects().length);
   const normalize = (value) => (value || '').replace(/\s+/g, ' ').trim();
-  const visibleText = (element) => normalize(element?.innerText || element?.textContent || '');
+  const visibleText = (element) => normalize(element?.textContent || '');
 
   function setState(status, message) {
     state.status = status;
@@ -175,7 +182,18 @@
       if (editor.matches('textarea,.ace_text-input') && editor.closest('.CodeMirror,.ace_editor,.monaco-editor,.cm-editor,[data-testid*="editor"],.code-editor,.editor')) {
         return false;
       }
-      return true;
+      if (editor.matches('.editor,[data-testid*="editor"]') &&
+          editor.querySelector('.CodeMirror,.ace_editor,.monaco-editor,.cm-editor')) {
+        return false;
+      }
+      const context = visibleText(editor.parentElement?.parentElement);
+      return !/custom input/i.test(context.slice(0, 200));
+    }).sort((left, right) => {
+      const score = (element) => {
+        const classes = typeof element.className === 'string' ? element.className : '';
+        return /CodeMirror|ace_editor|monaco-editor|cm-editor|code-editor|editor/i.test(classes) ? 1 : 0;
+      };
+      return score(right) - score(left);
     });
   }
 
@@ -192,6 +210,7 @@
     for (const selector of SELECTORS.question) {
       const candidate = Array.from(document.querySelectorAll(selector))
         .filter(isVisible)
+        .slice(0, 20)
         .sort((a, b) => visibleText(a).length - visibleText(b).length)
         .find((element) => visibleText(element).length >= 10);
       if (candidate) return candidate;
@@ -200,11 +219,32 @@
     const statement = findFirstVisible([
       '.problem-statement',
       '.problem_statement',
+      '.statement',
+      '[class*="statement"]',
       '.problems-problem-content',
       '[data-testid*="problem-statement"]',
       '[class*="ProblemDescription"]'
     ]);
     if (statement) return statement;
+
+    const title = Array.from(document.querySelectorAll('h1,h2,h3'))
+      .filter(isVisible)
+      .slice(0, 20)
+      .find((heading) => {
+        const text = visibleText(heading);
+        return text.length > 5 && text.length < 180;
+      });
+    if (title) {
+      let ancestor = title.parentElement;
+      for (let depth = 0; ancestor && depth < 6; depth += 1, ancestor = ancestor.parentElement) {
+        const text = visibleText(ancestor);
+        if (text.length > 100 && text.length < 18000 &&
+            /input format|output format|constraints|sample/i.test(text)) {
+          return ancestor;
+        }
+      }
+      return title.parentElement || title;
+    }
     return null;
   }
 
@@ -232,14 +272,41 @@
 
   function detectQuestion(root) {
     const editors = findVisibleEditors();
+    if (!root) return null;
     const options = collectOptions(root);
     if (options.length >= 2 && !editors.length) {
-      const title = visibleText(findFirstVisible(['h1', 'h2', 'h3', '[data-testid*="question-title"]'], root)) || visibleText(root).slice(0, 700);
+      const statement = findStatementRoot(document);
+      const title = visibleText(findFirstVisible(['h1', 'h2', 'h3', '[data-testid*="question-title"]'], statement || root)) || visibleText(statement || root).slice(0, 700);
       return { type: 'MCQ', root, title, options };
     }
     if (editors.length === 1) {
-      const title = visibleText(findFirstVisible(['h1', 'h2', 'h3', '.problem-statement', '[data-testid*="problem-title"]'], root)) || visibleText(root).slice(0, 700);
-      return { type: 'PROGRAMMING', root, title, options: [], editor: editors[0] };
+      const statement = findStatementRoot(document);
+      const title = visibleText(findFirstVisible(['h1', 'h2', 'h3', '.problem-statement', '[data-testid*="problem-title"]'], statement || root)) || visibleText(statement || root).slice(0, 700);
+      return { type: 'PROGRAMMING', root, statement: statement || root, title, options: [], editor: editors[0] };
+    }
+    return null;
+  }
+
+  function findStatementRoot(root) {
+    const specific = findFirstVisible([
+      '.problem-statement',
+      '.problem_statement',
+      '.problems-problem-content',
+      '[data-testid*="problem-statement"]',
+      '[class*="ProblemDescription"]'
+    ], root);
+    if (specific) return specific;
+
+    const headings = Array.from(root.querySelectorAll('h1,h2,h3')).filter(isVisible).slice(0, 20);
+    for (const heading of headings) {
+      let ancestor = heading.parentElement;
+      for (let depth = 0; ancestor && depth < 6; depth += 1, ancestor = ancestor.parentElement) {
+        const text = visibleText(ancestor);
+        if (text.length > 100 && text.length < 18000 &&
+            /input format|output format|constraints|sample/i.test(text)) {
+          return ancestor;
+        }
+      }
     }
     return null;
   }
@@ -264,7 +331,7 @@
   }
 
   function compactProblemContext(question, currentCode = '', feedback = '') {
-    const text = visibleText(question.root).slice(0, 12000);
+    const text = visibleText(question.statement || question.root).slice(0, 12000);
     return {
       type: 'PROGRAMMING',
       question: question.title.slice(0, 1000),
@@ -328,12 +395,15 @@
 
   function readEditorCode(editor) {
     const editorRoot = editor.matches('textarea') ? editor.parentElement : editor;
-    const cm = editorRoot?.CodeMirror || editor.CodeMirror;
+    const cmRoot = editor.matches('.CodeMirror') ? editor : editor.closest('.CodeMirror') || editor.querySelector('.CodeMirror') || editorRoot;
+    const cm = cmRoot?.CodeMirror || editorRoot?.CodeMirror || editor.CodeMirror;
     if (cm && typeof cm.getValue === 'function') return cm.getValue();
     const ace = editor.env?.editor || editorRoot?.env?.editor;
     if (ace && typeof ace.getValue === 'function') return ace.getValue();
     const textarea = editor.matches('textarea') ? editor : editor.querySelector('textarea');
-    return textarea?.value || '';
+    if (textarea?.value) return textarea.value;
+    const visibleCode = editor.querySelector('.view-lines,.ace_text-layer,.cm-content');
+    return visibleCode?.textContent || '';
   }
 
   function ensureCLanguage() {
@@ -357,10 +427,8 @@
 
   function injectCode(editor, code) {
     const editorRoot = editor.matches('textarea') ? editor.parentElement : editor;
-    if (editor.closest('.monaco-editor') && typeof editorRoot?.CodeMirror?.setValue !== 'function') {
-      return false;
-    }
-    const cm = editorRoot?.CodeMirror || editor.CodeMirror;
+    const cmRoot = editor.matches('.CodeMirror') ? editor : editor.closest('.CodeMirror') || editor.querySelector('.CodeMirror') || editorRoot;
+    const cm = cmRoot?.CodeMirror || editorRoot?.CodeMirror || editor.CodeMirror;
     if (cm && typeof cm.setValue === 'function') {
       cm.setValue(code);
       cm.save?.();
@@ -378,7 +446,9 @@
     if (textarea) {
       textarea.focus();
       setNativeValue(textarea, code);
-      return textarea.value === code;
+      if (textarea.value === code) return true;
+      const rendered = editor.querySelector('.view-lines,.ace_text-layer,.cm-content');
+      return Boolean(rendered && normalize(rendered.textContent) === normalize(code));
     }
 
     const editable = editor.isContentEditable ? editor : editor.querySelector('[contenteditable="true"]');
@@ -424,7 +494,7 @@
     return matched.join('\n').slice(-3000) || visibleText(root).slice(-1500);
   }
 
-  function waitForResult(beforeText, timeoutMs = WAIT_TIMEOUT_MS) {
+  function waitForResult(beforeText, timeoutMs = RESULT_TIMEOUT_MS) {
     const start = Date.now();
     return new Promise((resolve) => {
       const poll = () => {
@@ -495,7 +565,7 @@
       setState(MODULE_STATE.VERIFYING, `${runButton ? 'Running C solution' : 'Submitting practice solution'}, attempt ${attempt}/${MAX_ATTEMPTS}.`);
       feedback = await waitForResult(before);
       if (!feedback) {
-        throw new Error(`No observable result appeared within ${WAIT_TIMEOUT_MS / 1000} seconds.`);
+        throw new Error(`No observable result appeared within ${RESULT_TIMEOUT_MS / 1000} seconds.`);
       }
       if (/wrong answer|compile error|runtime error|failed/i.test(feedback)) {
         setState(MODULE_STATE.SOLVING, `Run reported an error; preparing a corrected solution. ${feedback.slice(-350)}`);
@@ -509,7 +579,7 @@
         setState(MODULE_STATE.VERIFYING, `Submitting the tested practice solution, attempt ${attempt}/${MAX_ATTEMPTS}.`);
         feedback = await waitForResult(beforeSubmit);
         if (!feedback) {
-          throw new Error(`No submission result appeared within ${WAIT_TIMEOUT_MS / 1000} seconds.`);
+          throw new Error(`No submission result appeared within ${RESULT_TIMEOUT_MS / 1000} seconds.`);
         }
         if (/\baccepted\b|all test cases passed|submission successful/i.test(feedback) &&
             !/wrong answer|compile error|runtime error|failed/i.test(feedback)) return true;
@@ -525,7 +595,7 @@
 
   async function waitForChangedQuestion(previousFingerprint) {
     const started = Date.now();
-    while (state.active && Date.now() - started < WAIT_TIMEOUT_MS) {
+    while (state.active && Date.now() - started < DETECTION_TIMEOUT_MS) {
       await sleep(250);
       const root = getQuestionRoot();
       if (!root) continue;
@@ -561,7 +631,7 @@
         setState(MODULE_STATE.WAITING_FOR_USER, 'Assessment-like page detected. Copilot stopped without submitting it.');
         return;
       }
-      setState(MODULE_STATE.DETECTING_QUESTION, 'Looking for a supported question in the current page.');
+      setState(MODULE_STATE.DETECTING_QUESTION, 'Scanning visible page content for the statement, answer choices, and editor.');
       const root = getQuestionRoot();
       const question = root && detectQuestion(root);
       if (!question) {
@@ -660,11 +730,14 @@
       setState(MODULE_STATE.WAITING_FOR_USER, 'Assessment-like page detected. Automatic module solving is disabled on assessment pages.');
       return;
     }
-    setState(MODULE_STATE.DETECTING_MODULE, 'Detecting the current CodeChef module.');
+    setState(MODULE_STATE.DETECTING_QUESTION, 'Scanning the current CodeChef page now.');
     try {
       const initial = await waitForQuestion();
       if (!state.active) return;
-      if (!initial) throw new Error('No supported question container became available before timeout.');
+      if (!initial) throw new Error(describeDetectionFailure());
+      state.questionType = initial.type;
+      state.currentQuestion = initial.title.slice(0, 70);
+      setState(MODULE_STATE.CLASSIFYING, `Crawled visible page content; found ${initial.type} question and ${initial.type === 'PROGRAMMING' ? 'editor' : `${initial.options.length} answer options`}. Sending compact context to the model.`);
       await processLoop();
     } catch (error) {
       state.active = false;
@@ -683,11 +756,21 @@
         const root = getQuestionRoot();
         const question = root && detectQuestion(root);
         if (question) return resolve(question);
-        if (Date.now() - started >= WAIT_TIMEOUT_MS) return resolve(null);
-        setTimeout(check, 250);
+        if (Date.now() - started >= DETECTION_TIMEOUT_MS) return resolve(null);
+        setTimeout(check, 200);
       };
       check();
     });
+  }
+
+  function describeDetectionFailure() {
+    const editorCount = findVisibleEditors().length;
+    const headings = Array.from(document.querySelectorAll('h1,h2,h3'))
+      .filter(isVisible)
+      .slice(0, 5)
+      .map(visibleText)
+      .filter(Boolean);
+    return `Could not detect a supported question after ${DETECTION_TIMEOUT_MS / 1000}s. Found ${editorCount} visible code editor(s); page headings: ${headings.join(' | ') || 'none'}.`;
   }
 
   async function retryFailedQuestion() {
