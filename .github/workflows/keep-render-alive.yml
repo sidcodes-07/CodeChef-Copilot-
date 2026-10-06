@@ -15,13 +15,13 @@ jobs:
     steps:
       - name: Ping Render health endpoint
         env:
-          RENDER_HEALTH_URL: ${{ vars.RENDER_HEALTH_URL }}
+          RENDER_HEALTH_URL: https://codechef-copilot-api.onrender.com
         run: |
-          if [ -z "$RENDER_HEALTH_URL" ]; then
+          if [ https://codechef-copilot-api.onrender.com]; then
             echo "Set the repository variable RENDER_HEALTH_URL to your Render service health URL."
             exit 1
           fi
 
           curl --fail --silent --show-error \
             --max-time 20 \
-            "$RENDER_HEALTH_URL"
+            "https://codechef-copilot-api.onrender.com"
